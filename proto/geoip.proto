@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package geoip;
+
+option go_package = "geoip-service/internal/grpcapi;grpcapi";
+
+service GeoIP {
+  rpc Check(CheckRequest) returns (CheckResponse);
+}
+
+message CheckRequest {
+  string ip_address = 1;
+  repeated string allowed_countries = 2;
+}
+
+message CheckResponse {
+  string ip_address = 1;
+  bool allowed = 2;
+  string resolved_country = 3;
+  repeated string allowed_countries = 4;
+}

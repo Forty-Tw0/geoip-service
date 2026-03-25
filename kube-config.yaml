@@ -1,0 +1,159 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: geoip-service
+type: Opaque
+stringData:
+  # Replace with real MaxMind credentials before applying.
+  maxmind-account-id: "REPLACE_ME"
+  maxmind-license-key: "REPLACE_ME"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: geoip-service-db
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geoip-service
+  labels:
+    app: geoip-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: geoip-service
+  template:
+    metadata:
+      labels:
+        app: geoip-service
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: fetch-geoip-db
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MAXMIND_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: geoip-service
+                  key: maxmind-account-id
+            - name: MAXMIND_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: geoip-service
+                  key: maxmind-license-key
+            - name: MAXMIND_EDITION_ID
+              value: GeoLite2-Country
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              tmpdir="$(mktemp -d)"
+              archive="${tmpdir}/geoip.tar.gz"
+              wget --user="${MAXMIND_ACCOUNT_ID}" --password="${MAXMIND_LICENSE_KEY}" -O "${archive}" "https://download.maxmind.com/geoip/databases/${MAXMIND_EDITION_ID}/download?suffix=tar.gz"
+              tar -xzf "${archive}" -C "${tmpdir}"
+              db_path="$(find "${tmpdir}" -type f -name '*.mmdb' | head -n 1)"
+              test -n "${db_path}"
+              cp "${db_path}" /var/lib/geoip/GeoLite2-Country.mmdb
+          volumeMounts:
+            - name: geoip-db
+              mountPath: /var/lib/geoip
+      containers:
+        - name: geoip-service
+          # Replace with your published image reference.
+          image: ghcr.io/your-org/geoip-service:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: LISTEN_ADDRESS
+              value: "0.0.0.0:8042"
+            - name: GRPC_LISTEN_ADDRESS
+              value: "0.0.0.0:8842"
+            - name: GEOIP_DB_PATH
+              value: /var/lib/geoip/GeoLite2-Country.mmdb
+            - name: MAXMIND_EDITION_ID
+              value: GeoLite2-Country
+            - name: MAXMIND_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: geoip-service
+                  key: maxmind-account-id
+            - name: MAXMIND_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: geoip-service
+                  key: maxmind-license-key
+          ports:
+            - name: http
+              containerPort: 8042
+            - name: grpc
+              containerPort: 8842
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 2
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: geoip-db
+              mountPath: /var/lib/geoip
+      volumes:
+        - name: geoip-db
+          persistentVolumeClaim:
+            claimName: geoip-service-db
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: geoip-service
+  labels:
+    app: geoip-service
+spec:
+  selector:
+    app: geoip-service
+  ports:
+    - name: http
+      port: 8042
+      targetPort: http
+    - name: grpc
+      port: 8842
+      targetPort: grpc

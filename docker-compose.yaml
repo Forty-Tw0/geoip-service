@@ -1,0 +1,11 @@
+services:
+  app:
+    build:
+      context: .
+    environment:
+      GEOIP_DB_PATH: /data/GeoIP2-Country-Test.mmdb
+    ports:
+      - "8042:8042"
+      - "8842:8842"
+    volumes:
+      - ${TEST_GEOIP_DB_PATH:-.cache/test/GeoIP2-Country-Test.mmdb}:/data/GeoIP2-Country-Test.mmdb:ro
