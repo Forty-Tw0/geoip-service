@@ -111,3 +111,11 @@ Run locally with the cached mmdb:
 ```bash
 make run
 ```
+
+## Production Deployment
+
+TODO:
+- Use paid GeoIP2 edition, which requires MAXMIND_ACCOUNT_ID and MAXMING_LICENSE_KEY.
+- Bootstrap .mmdb at service start if it is missing, or at least manually create it before starting the service.
+- Hook up /update to a daily job, or internalize the update code within the service.
+
